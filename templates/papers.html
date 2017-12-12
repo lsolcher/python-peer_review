@@ -96,9 +96,7 @@ Dashboard
         <h2 class="form-signin-heading">Please sign in</h2>
         {{ form.hidden_tag() }}
         {{ wtf.form_field(form.title) }}
-        {{ wtf.form_field(form.authors1) }}
-        {{ wtf.form_field(form.authors2) }}
-        {{ wtf.form_field(form.authors3) }}
+        {{ wtf.form_field(form.authors) }}
         {{ wtf.form_field(form.abstract) }}
         <button class="btn btn-lg btn-primary btn-block" type="submit">Submit</button>
       </form>

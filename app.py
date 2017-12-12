@@ -1,7 +1,7 @@
 from flask import Flask, request, flash, render_template, redirect, url_for, session
 from flask_bootstrap import Bootstrap
 from flask_wtf import FlaskForm 
-from wtforms import StringField, SelectField,  PasswordField, BooleanField
+from wtforms import StringField, SelectMultipleField,  PasswordField, TextAreaField, BooleanField
 from wtforms.validators import InputRequired, DataRequired, Email, Length
 from flask_sqlalchemy  import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -30,8 +30,7 @@ class Paper(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(80), nullable=False)
     abstract = db.Column(db.Text, nullable=False)
-    author_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable =False)
-    
+    authors = db.Column(db.Integer, db.ForeignKey('user.id'), nullable =False)
     def __repr__(self):
         return '<Paper{}>'.format(self.title)
 
@@ -49,23 +48,30 @@ class RegisterForm(FlaskForm):
     username = StringField('username', validators=[InputRequired(), Length(min=4, max=15)])
     password = PasswordField('password', validators=[InputRequired(), Length(min=8, max=80)])
 
+DEFAULT_CHOICES = []
+
 class PaperForm(FlaskForm):
+    
     title = StringField('title', validators=[InputRequired(), Length(min=4, max=15)])
-    authors1 = SelectField('authors1', id ='paper_authors1')
-    authors2 = SelectField('authors2', id ='paper_authors2')
-    authors3 = SelectField('authors3', id ='paper_authors3')
-    abstract = StringField('abstract', validators=[InputRequired(), Length(min=4, max=15)])
+    authors = SelectMultipleField('authors', DEFAULT_CHOICES)
+    abstract = TextAreaField('abstract', validators=[InputRequired(), Length(min=1)])
 
-
+#TODOs: Validate form! Map authors to db.authors
 @app.route('/papers', methods = ['GET', 'POST'])
 def papers():
     form = PaperForm()
     q = User.query.filter(User.username != session['username']).all()
-    form.authors1.choices =  [(user.id, user.username) for user in q]
-    form.authors2.choices =  [(user.id, user.username) for user in q]
-    form.authors3.choices =  [(user.id, user.username) for user in q]
-    if form.validate_on_submit():
-            paper = Paper(title=form.title.data, authors=form.authors.data, author_id=form.abstract.data)
+    form.authors.choices =  [(user.id, user.username) for user in q]
+    #form.authors.choices.insert(0, ['0', 'none'])
+    #form.authors2.choices =  [(user.id, user.username) for user in q]
+    #form.authors2.choices.insert(0, ['0', 'none'])
+    #form.authors3.choices =  [(user.id, user.username) for user in q]
+    #form.authors3.choices.insert(0, ['0', 'none'])
+    if request.method == 'POST': #form.validate_on_submit():
+            #author_ids = form.authors.data
+            #for iids in author_ids:
+             #   print (iids)
+            paper = Paper(title=form.title.data, abstract=form.abstract.data, authors=form.authors.data)            
             db.session.add(paper)
             db.session.commit()
             flash('Paper was successfully submitted')
