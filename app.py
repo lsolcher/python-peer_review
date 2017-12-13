@@ -15,22 +15,36 @@ db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+
+association_table = db.Table('association', db.Model.metadata,
+                          db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
+                          db.Column('paper_id', db.Integer, db.ForeignKey('paper.id'))
+                          )
  
 class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    #__tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     username = db.Column(db.String(15), unique=True)
     email = db.Column(db.String(50), unique=True)
     password = db.Column(db.String(80))
-    papers = db.relationship('Paper', backref='user')
+    papers = db.relationship("Paper", 
+                             secondary=association_table,
+                             backref="User"
+                            )
     
     def __repr__(self):
-        return '<Author:{}>'.format(self.name)
+        return '<Author:{}>'.format(self.username)
     
 class Paper(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    #__tablename__ = 'papers'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     title = db.Column(db.String(80), nullable=False)
     abstract = db.Column(db.Text, nullable=False)
-    authors = db.Column(db.Integer, db.ForeignKey('user.id'), nullable =False)
+    authors = db.relationship("User",
+                              secondary=association_table,
+                              backref="Paper"
+                             )
+    
     def __repr__(self):
         return '<Paper{}>'.format(self.title)
 
@@ -50,11 +64,16 @@ class RegisterForm(FlaskForm):
 
 DEFAULT_CHOICES = []
 
-class PaperForm(FlaskForm):
-    
+class NoValidationSelectMultipleField(SelectMultipleField):
+    def pre_validate(self, form):
+        """per_validation is disabled"""
+
+class PaperForm(FlaskForm):    
     title = StringField('title', validators=[InputRequired(), Length(min=4, max=15)])
-    authors = SelectMultipleField('authors', DEFAULT_CHOICES)
+    authors = NoValidationSelectMultipleField('authors', DEFAULT_CHOICES)
     abstract = TextAreaField('abstract', validators=[InputRequired(), Length(min=1)])
+
+
 
 #TODOs: Validate form! Map authors to db.authors
 @app.route('/papers', methods = ['GET', 'POST'])
@@ -67,15 +86,15 @@ def papers():
     #form.authors2.choices.insert(0, ['0', 'none'])
     #form.authors3.choices =  [(user.id, user.username) for user in q]
     #form.authors3.choices.insert(0, ['0', 'none'])
-    if request.method == 'POST': #form.validate_on_submit():
-            #author_ids = form.authors.data
-            #for iids in author_ids:
-             #   print (iids)
-            paper = Paper(title=form.title.data, abstract=form.abstract.data, authors=form.authors.data)            
+    if form.validate_on_submit():
+            a = User.query.filter(User.id.in_(form.authors.data)).all()
+            #a = q.filter(User.id.in_(form.authors.data))
+            #a = User.query.get(form.authors.data)
+            paper = Paper(title=form.title.data, abstract=form.abstract.data, authors=a)#authors=[user]) #authors=dict(form.authors.choices).get(form.authors.data))            
             db.session.add(paper)
             db.session.commit()
             flash('Paper was successfully submitted')
-            return redirect(url_for('index'))
+            #return redirect(url_for('index'))
     return render_template('papers.html', form=form)
 
 @app.route('/')
