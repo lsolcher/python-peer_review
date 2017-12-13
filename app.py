@@ -88,13 +88,16 @@ def papers():
     #form.authors3.choices.insert(0, ['0', 'none'])
     if form.validate_on_submit():
             a = User.query.filter(User.id.in_(form.authors.data)).all()
-            #a = q.filter(User.id.in_(form.authors.data))
-            #a = User.query.get(form.authors.data)
-            paper = Paper(title=form.title.data, abstract=form.abstract.data, authors=a)#authors=[user]) #authors=dict(form.authors.choices).get(form.authors.data))            
-            db.session.add(paper)
-            db.session.commit()
-            flash('Paper was successfully submitted')
-            #return redirect(url_for('index'))
+            if len(a) == 0 or len(a) > 3:
+                flash('Specify at least 1 and at most 3 authors', 'error')
+            else:
+                #a = q.filter(User.id.in_(form.authors.data))
+                #a = User.query.get(form.authors.data)
+                paper = Paper(title=form.title.data, abstract=form.abstract.data, authors=a)#authors=[user]) #authors=dict(form.authors.choices).get(form.authors.data))            
+                db.session.add(paper)
+                db.session.commit()
+                flash('Paper was successfully submitted')
+                #return redirect(url_for('index'))
     return render_template('papers.html', form=form)
 
 @app.route('/')
