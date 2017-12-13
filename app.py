@@ -1,7 +1,7 @@
 from flask import Flask, request, flash, render_template, redirect, url_for, session
 from flask_bootstrap import Bootstrap
 from flask_wtf import FlaskForm 
-from wtforms import StringField, SelectMultipleField,  PasswordField, TextAreaField, BooleanField
+from wtforms import StringField, SelectMultipleField,  PasswordField, TextAreaField, BooleanField, SelectField
 from wtforms.validators import InputRequired, DataRequired, Email, Length
 from flask_sqlalchemy  import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -27,6 +27,8 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(15), unique=True)
     email = db.Column(db.String(50), unique=True)
     password = db.Column(db.String(80))
+    is_reviewer = db.Column(db.Boolean, default=False, nullable=True)
+    is_admin = db.Column(db.Boolean, default=False, nullable=True)
     papers = db.relationship("Paper", 
                              secondary=association_table,
                              backref="User"
@@ -40,6 +42,7 @@ class Paper(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     title = db.Column(db.String(80), nullable=False)
     abstract = db.Column(db.Text, nullable=False)
+    rating = db.Column(db.Integer, default=0)
     authors = db.relationship("User",
                               secondary=association_table,
                               backref="Paper"
@@ -73,19 +76,14 @@ class PaperForm(FlaskForm):
     authors = NoValidationSelectMultipleField('authors', DEFAULT_CHOICES)
     abstract = TextAreaField('abstract', validators=[InputRequired(), Length(min=1)])
 
+class ReviewForm:
+    paper = SelectField('author', DEFAULT_CHOICES)
 
-
-#TODOs: Validate form! Map authors to db.authors
 @app.route('/papers', methods = ['GET', 'POST'])
 def papers():
     form = PaperForm()
     q = User.query.filter(User.username != session['username']).all()
     form.authors.choices =  [(user.id, user.username) for user in q]
-    #form.authors.choices.insert(0, ['0', 'none'])
-    #form.authors2.choices =  [(user.id, user.username) for user in q]
-    #form.authors2.choices.insert(0, ['0', 'none'])
-    #form.authors3.choices =  [(user.id, user.username) for user in q]
-    #form.authors3.choices.insert(0, ['0', 'none'])
     if form.validate_on_submit():
             a = User.query.filter(User.id.in_(form.authors.data)).all()
             if len(a) == 0 or len(a) > 3:
@@ -99,6 +97,25 @@ def papers():
                 flash('Paper was successfully submitted')
                 #return redirect(url_for('index'))
     return render_template('papers.html', form=form)
+
+@app.route('/assign_reviewers', methods = ['GET', 'POST'])
+def assign_reviewers():
+    form = PaperForm()
+    q = User.query.filter(User.username != session['username']).all()
+    form.authors.choices =  [(user.id, user.username) for user in q]
+    if form.validate_on_submit():
+            a = User.query.filter(User.id.in_(form.authors.data)).all()
+            if len(a) == 0 or len(a) > 3:
+                flash('Specify at least 1 and at most 3 authors', 'error')
+            else:
+                #a = q.filter(User.id.in_(form.authors.data))
+                #a = User.query.get(form.authors.data)
+                paper = Paper(title=form.title.data, abstract=form.abstract.data, authors=a)#authors=[user]) #authors=dict(form.authors.choices).get(form.authors.data))            
+                db.session.add(paper)
+                db.session.commit()
+                flash('Paper was successfully submitted')
+                #return redirect(url_for('index'))
+    return render_template('assign_reviewers.html', form=form)
 
 @app.route('/')
 def index():
