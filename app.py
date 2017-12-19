@@ -1,11 +1,9 @@
 from flask import Flask, request, flash, render_template, redirect, url_for, session
 from flask_bootstrap import Bootstrap
-from flask_wtf import FlaskForm 
-from wtforms import StringField, SelectMultipleField,  PasswordField, TextAreaField, BooleanField, SelectField
-from wtforms.validators import InputRequired, DataRequired, Email, Length
 from flask_sqlalchemy  import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from forms import PaperForm, ReviewerForm, LoginForm, RegisterForm, RateForm
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'Thisissupposedtobesecret!'
@@ -16,7 +14,12 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-association_table = db.Table('association', db.Model.metadata,
+paper_authors = db.Table('paper_authors', db.Model.metadata,
+                          db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
+                          db.Column('paper_id', db.Integer, db.ForeignKey('paper.id'))
+                          )
+
+paper_reviewers = db.Table('paper_reviewers', db.Model.metadata,
                           db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
                           db.Column('paper_id', db.Integer, db.ForeignKey('paper.id'))
                           )
@@ -27,11 +30,14 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(15), unique=True)
     email = db.Column(db.String(50), unique=True)
     password = db.Column(db.String(80))
-    is_reviewer = db.Column(db.Boolean, default=False, nullable=True)
     is_admin = db.Column(db.Boolean, default=False, nullable=True)
     papers = db.relationship("Paper", 
-                             secondary=association_table,
-                             backref="User"
+                             secondary=paper_authors,
+                             backref="written"
+                            )
+    reviews = db.relationship("Paper", 
+                             secondary=paper_reviewers,
+                             backref="reviews"
                             )
     
     def __repr__(self):
@@ -44,9 +50,14 @@ class Paper(db.Model):
     abstract = db.Column(db.Text, nullable=False)
     rating = db.Column(db.Integer, default=0)
     authors = db.relationship("User",
-                              secondary=association_table,
-                              backref="Paper"
+                              secondary=paper_authors,
+                              backref="author"
                              )
+    reviewers = db.relationship("User",
+                              secondary=paper_reviewers,
+                              backref="reviewer"
+                             )
+    
     
     def __repr__(self):
         return '<Paper{}>'.format(self.title)
@@ -55,34 +66,11 @@ class Paper(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-class LoginForm(FlaskForm):
-    username = StringField('username', validators=[InputRequired(), Length(min=4, max=15)])
-    password = PasswordField('password', validators=[InputRequired(), Length(min=8, max=80)])
-    remember = BooleanField('remember me')
-
-class RegisterForm(FlaskForm):
-    email = StringField('email', validators=[InputRequired(), Email(message='Invalid email'), Length(max=50)])
-    username = StringField('username', validators=[InputRequired(), Length(min=4, max=15)])
-    password = PasswordField('password', validators=[InputRequired(), Length(min=8, max=80)])
-
-DEFAULT_CHOICES = []
-
-class NoValidationSelectMultipleField(SelectMultipleField):
-    def pre_validate(self, form):
-        """per_validation is disabled"""
-
-class PaperForm(FlaskForm):    
-    title = StringField('title', validators=[InputRequired(), Length(min=4, max=15)])
-    authors = NoValidationSelectMultipleField('authors', DEFAULT_CHOICES)
-    abstract = TextAreaField('abstract', validators=[InputRequired(), Length(min=1)])
-
-class ReviewForm:
-    paper = SelectField('author', DEFAULT_CHOICES)
 
 @app.route('/papers', methods = ['GET', 'POST'])
 def papers():
     form = PaperForm()
-    q = User.query.filter(User.username != session['username']).all()
+    q = User.query.all()
     form.authors.choices =  [(user.id, user.username) for user in q]
     if form.validate_on_submit():
             a = User.query.filter(User.id.in_(form.authors.data)).all()
@@ -91,7 +79,11 @@ def papers():
             else:
                 #a = q.filter(User.id.in_(form.authors.data))
                 #a = User.query.get(form.authors.data)
-                paper = Paper(title=form.title.data, abstract=form.abstract.data, authors=a)#authors=[user]) #authors=dict(form.authors.choices).get(form.authors.data))            
+                papertitle = form.title.data + " by "
+                for author in a:
+                    papertitle += author.username + ", "
+                papertitle = papertitle[:-2]
+                paper = Paper(title=papertitle, abstract=form.abstract.data, authors=a)#authors=[user]) #authors=dict(form.authors.choices).get(form.authors.data))            
                 db.session.add(paper)
                 db.session.commit()
                 flash('Paper was successfully submitted')
@@ -100,22 +92,51 @@ def papers():
 
 @app.route('/assign_reviewers', methods = ['GET', 'POST'])
 def assign_reviewers():
-    form = PaperForm()
-    q = User.query.filter(User.username != session['username']).all()
-    form.authors.choices =  [(user.id, user.username) for user in q]
-    if form.validate_on_submit():
-            a = User.query.filter(User.id.in_(form.authors.data)).all()
-            if len(a) == 0 or len(a) > 3:
-                flash('Specify at least 1 and at most 3 authors', 'error')
-            else:
-                #a = q.filter(User.id.in_(form.authors.data))
-                #a = User.query.get(form.authors.data)
-                paper = Paper(title=form.title.data, abstract=form.abstract.data, authors=a)#authors=[user]) #authors=dict(form.authors.choices).get(form.authors.data))            
-                db.session.add(paper)
+    form = ReviewerForm()
+    qP = Paper.query.all()
+    form.paper.choices = [(paper.id, paper.title) for paper in qP]
+    #qU = User.query.filter(User.username != session['username']).all()
+    qU = User.query.all()
+    form.reviewers.choices =  [(user.id, user.username) for user in qU]
+    if form.validate_on_submit():      
+            reviewer = User.query.filter(User.id.in_(form.reviewers.data)).all()
+            paperID = form.paper.data
+            paperObject =  Paper.query.get(paperID)
+            invalid = False
+            if len(reviewer) == 0:
+                flash('Specify at least 1 author you want to be reviewer', 'error')   
+                invalid = True
+            if invalid == False:
+                for r in reviewer:
+                    for p in r.papers:
+                        if p == paperObject:
+                            invalid = True
+                            flash('One or more of the chosen reviewers are author(s) of the chosen paper. Please select only reviewers who are no authors.')           
+            if invalid == False:
+                for r in reviewer:
+                    r.reviews.append(paperObject)
+                    paperObject.reviewers.append(r)
                 db.session.commit()
-                flash('Paper was successfully submitted')
-                #return redirect(url_for('index'))
+                flash('Successfully assigned reviewers')
     return render_template('assign_reviewers.html', form=form)
+
+@app.route('/rate_papers', methods = ['GET', 'POST'])
+def rate_papers():
+    form = RateForm()
+    qP = Paper.query.filter(Paper.reviewers.any(paper.id=paper_id)).all()
+    print(qP)
+    form.paper.choices = [(paper.id, paper.title) for paper in qP]
+    #qU = User.query.filter(User.username != session['username']).all()
+    #qU = User.query.all()
+    #form.reviewers.choices =  [(user.id, user.username) for user in qU]
+    if form.validate_on_submit():   
+        paperID = form.paper.data
+        paperObject =  Paper.query.get(paperID)
+        paperObject.rating =form.score.data
+        db.session.commit()
+        flash('Successfully submitted your rating')
+    return render_template('rate_papers.html', form=form)
+
 
 @app.route('/')
 def index():
@@ -164,6 +185,10 @@ def dashboard():
 def logout():
     logout_user()
     return redirect(url_for('index'))
+
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html'), 404
 
 def init_db():
     db.init_app(app)

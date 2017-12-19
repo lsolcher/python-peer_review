@@ -14,19 +14,18 @@ Dashboard
 {{super()}}
 
 <div class="col-sm-9 col-sm-offset-3 col-md-10 col-md-offset-2 main">
-    <h2 class="sub-header">Paper submission</h2>
+    <h2 class="sub-header">Rate papers</h2>
     <div class="table-responsive">
         {%- for category, message in get_flashed_messages(with_categories = true) %}
         <div class = "alert alert-danger">
         {{ message }}
         </div>
         {%- endfor %} 
-        <form class="form-signin" method="POST" action="/papers">
-            <h4 class="form-signin-heading">Please fill in the form to submit your paper. Select more than one author by holding [ctrl] while selecting them.</h2>
+        <form class="form-signin" method="POST" action="/rate_papers">
+            <h4 class="form-signin-heading">Below you find the papers you are eligible to vote for. Please submit your rating. </h2>
             {{ form.hidden_tag() }}
-            {{ wtf.form_field(form.title) }}
-            {{ wtf.form_field(form.authors) }}
-            {{ wtf.form_field(form.abstract) }}
+            {{ wtf.form_field(form.paper) }}
+            {{ wtf.form_field(form.score) }}
             <button class="btn btn-lg btn-primary btn-block" type="submit">Submit</button>
         </form>
     </div>
