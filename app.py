@@ -192,7 +192,9 @@ def signup():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    return render_template('dashboard.html', name=current_user.username)
+    #papers_to_review = Paper.query.filter()
+    data=[]
+    return render_template('dashboard.html', name=current_user.username,data=data)
 
 @app.route('/logout')
 @login_required
