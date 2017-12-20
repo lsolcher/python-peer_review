@@ -4,6 +4,7 @@ from flask_sqlalchemy  import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from forms import PaperForm, ReviewerForm, LoginForm, RegisterForm, RateForm
+from flask_login import current_user
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'Thisissupposedtobesecret!'
@@ -43,6 +44,10 @@ class User(UserMixin, db.Model):
     def __repr__(self):
         return '<Author:{}>'.format(self.username)
     
+    #def admin(self):
+    #    return self.is_admin
+
+    
 class Paper(db.Model):
     #__tablename__ = 'papers'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -68,6 +73,7 @@ def load_user(user_id):
 
 
 @app.route('/papers', methods = ['GET', 'POST'])
+@login_required
 def papers():
     form = PaperForm()
     q = User.query.all()
@@ -91,7 +97,12 @@ def papers():
     return render_template('papers.html', form=form)
 
 @app.route('/assign_reviewers', methods = ['GET', 'POST'])
+@login_required
 def assign_reviewers():
+    print(current_user)
+    print(current_user.is_admin)
+    if current_user.is_admin == False:
+        return render_template('403.html'), 403
     form = ReviewerForm()
     qP = Paper.query.all()
     form.paper.choices = [(paper.id, paper.title) for paper in qP]
@@ -121,10 +132,13 @@ def assign_reviewers():
     return render_template('assign_reviewers.html', form=form)
 
 @app.route('/rate_papers', methods = ['GET', 'POST'])
+@login_required
 def rate_papers():
     form = RateForm()
-    qP = Paper.query.filter(Paper.reviewers.any(paper.id=paper_id)).all()
-    print(qP)
+    #qP = Paper.query.filter(Paper.reviewers.any(paper.id=paper_id)).all()
+    #print(qP)
+    children = Paper.reviewers.any()
+    qP = session.query(Paper, children)
     form.paper.choices = [(paper.id, paper.title) for paper in qP]
     #qU = User.query.filter(User.username != session['username']).all()
     #qU = User.query.all()
@@ -152,6 +166,7 @@ def login():
             if check_password_hash(user.password, form.password.data):
                 login_user(user, remember=form.remember.data)
                 session['username'] = form.username.data
+                session['admin'] = user.is_admin
                 return redirect(url_for('dashboard'))
 
         return '<h1>Invalid username or password</h1>'
@@ -169,7 +184,6 @@ def signup():
         session['username'] = form.username.data
         db.session.add(new_user)
         db.session.commit()
-
         return '<h1>New user has been created!</h1>'
         #return '<h1>' + form.username.data + ' ' + form.email.data + ' ' + form.password.data + '</h1>'
 
@@ -190,11 +204,27 @@ def logout():
 def page_not_found(e):
     return render_template('404.html'), 404
 
+@login_manager.unauthorized_handler
+def unauthorized():
+    return render_template('403.html'), 403
+
 def init_db():
     db.init_app(app)
     db.app = app
     db.create_all()
+    
+def create_admin():
+    exists = User.query.filter_by(email='admin@test.de').first()
+    if not exists:
+        hashed_password = generate_password_hash('admin', method='sha256')
+        user = User(username='admin', email='admin@test.de', password=hashed_password, is_admin=True)
+        db.session.add(user)
+        db.session.commit()
+        
+
+    
 
 if __name__ == '__main__':
     init_db()
+    create_admin()
     app.run(debug=True)
