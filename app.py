@@ -1,10 +1,13 @@
-from flask import Flask, request, flash, render_template, redirect, url_for, session
+from flask import Flask, flash, render_template, redirect, url_for, session, request
 from flask_bootstrap import Bootstrap
 from flask_sqlalchemy  import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from forms import PaperForm, ReviewerForm, LoginForm, RegisterForm, RateForm
-from flask_login import current_user
+from forms import PaperForm, ReviewerForm, LoginForm, RegisterForm, RateForm, PaperOverviewTable
+
+##########################
+#         config         #
+##########################
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'Thisissupposedtobesecret!'
@@ -15,62 +18,16 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-paper_authors = db.Table('paper_authors', db.Model.metadata,
-                          db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
-                          db.Column('paper_id', db.Integer, db.ForeignKey('paper.id'))
-                          )
 
-paper_reviewers = db.Table('paper_reviewers', db.Model.metadata,
-                          db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
-                          db.Column('paper_id', db.Integer, db.ForeignKey('paper.id'))
-                          )
- 
-class User(UserMixin, db.Model):
-    #__tablename__ = 'users'
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    username = db.Column(db.String(15), unique=True)
-    email = db.Column(db.String(50), unique=True)
-    password = db.Column(db.String(80))
-    is_admin = db.Column(db.Boolean, default=False, nullable=True)
-    papers = db.relationship("Paper", 
-                             secondary=paper_authors,
-                             backref="written"
-                            )
-    reviews = db.relationship("Paper", 
-                             secondary=paper_reviewers,
-                             backref="reviews"
-                            )
-    
-    def __repr__(self):
-        return '<Author:{}>'.format(self.username)
-    
-    #def admin(self):
-    #    return self.is_admin
-
-    
-class Paper(db.Model):
-    #__tablename__ = 'papers'
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    title = db.Column(db.String(80), nullable=False)
-    abstract = db.Column(db.Text, nullable=False)
-    rating = db.Column(db.Integer, default=0)
-    authors = db.relationship("User",
-                              secondary=paper_authors,
-                              backref="author"
-                             )
-    reviewers = db.relationship("User",
-                              secondary=paper_reviewers,
-                              backref="reviewer"
-                             )
-    
-    
-    def __repr__(self):
-        return '<Paper{}>'.format(self.title)
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+
+##########################
+#         routes         #
+##########################
 
 @app.route('/papers', methods = ['GET', 'POST'])
 @login_required
@@ -83,8 +40,6 @@ def papers():
             if len(a) == 0 or len(a) > 3:
                 flash('Specify at least 1 and at most 3 authors', 'error')
             else:
-                #a = q.filter(User.id.in_(form.authors.data))
-                #a = User.query.get(form.authors.data)
                 papertitle = form.title.data + " by "
                 for author in a:
                     papertitle += author.username + ", "
@@ -93,14 +48,11 @@ def papers():
                 db.session.add(paper)
                 db.session.commit()
                 flash('Paper was successfully submitted')
-                #return redirect(url_for('index'))
     return render_template('papers.html', form=form)
 
 @app.route('/assign_reviewers', methods = ['GET', 'POST'])
 @login_required
 def assign_reviewers():
-    print(current_user)
-    print(current_user.is_admin)
     if current_user.is_admin == False:
         return render_template('403.html'), 403
     form = ReviewerForm()
@@ -131,22 +83,47 @@ def assign_reviewers():
                 flash('Successfully assigned reviewers')
     return render_template('assign_reviewers.html', form=form)
 
-@app.route('/rate_papers', methods = ['GET', 'POST'])
+@app.route('/score_overview', methods = ['GET', 'POST'])
+@login_required
+def score_overview():
+    if current_user.is_admin == False:
+        return render_template('403.html'), 403
+    print(request.args.get('id'))
+    if request.args.get('id') != None:    
+        paper_to_change = Paper.query.get(request.args.get('id'))
+        paper_to_change.is_accepted = not paper_to_change.is_accepted
+        print(request.args.get('id'))
+        print(paper_to_change.is_accepted)
+        db.session.commit()
+    items = Paper.query.all()    
+    for item in items:
+        item.score = Score.query.filter(Score.paper_id.contains(item.id)).all()
+        if len(item.score) == 0:
+            item.score = "<not rated yet>"
+        print(item.score)
+    table = PaperOverviewTable(items)
+    return render_template('score_overview.html', table=table)
+
+
+@app.route('/rate_papers/', methods = ['GET', 'POST'])
 @login_required
 def rate_papers():
     form = RateForm()
-    #qP = Paper.query.filter(Paper.reviewers.any(paper.id=paper_id)).all()
-    #print(qP)
-    children = Paper.reviewers.any()
-    qP = session.query(Paper, children)
-    form.paper.choices = [(paper.id, paper.title) for paper in qP]
-    #qU = User.query.filter(User.username != session['username']).all()
-    #qU = User.query.all()
-    #form.reviewers.choices =  [(user.id, user.username) for user in qU]
+    user = current_user
+    papers_to_review = Paper.query.filter(Paper.reviewers.contains(user)).all()
+    print(papers_to_review)   
+    form.paper.choices = [(paper.id, paper.title) for paper in papers_to_review]
     if form.validate_on_submit():   
         paperID = form.paper.data
+        print(paperID)
         paperObject =  Paper.query.get(paperID)
-        paperObject.rating =form.score.data
+        print(paperObject)
+        q = Score.query.filter(Score.paper==paperObject, Score.user==current_user).first()
+        if(q == None):
+            score = Score(rating=form.score.data, paper=paperObject, user=current_user )
+            db.session.add(score)
+        else:
+            q.rating = form.score.data
         db.session.commit()
         flash('Successfully submitted your rating')
     return render_template('rate_papers.html', form=form)
@@ -154,30 +131,28 @@ def rate_papers():
 
 @app.route('/')
 def index():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
     return render_template('index.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     form = LoginForm()
-
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
+        if user is None:
+            user = User.query.filter_by(email=form.username.data).first()
         if user:
             if check_password_hash(user.password, form.password.data):
                 login_user(user, remember=form.remember.data)
                 session['username'] = form.username.data
-                session['admin'] = user.is_admin
                 return redirect(url_for('dashboard'))
-
         return '<h1>Invalid username or password</h1>'
-        #return '<h1>' + form.username.data + ' ' + form.password.data + '</h1>'
-
     return render_template('login.html', form=form)
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
     form = RegisterForm()
-
     if form.validate_on_submit():
         hashed_password = generate_password_hash(form.password.data, method='sha256')
         new_user = User(username=form.username.data, email=form.email.data, password=hashed_password)
@@ -185,8 +160,6 @@ def signup():
         db.session.add(new_user)
         db.session.commit()
         return '<h1>New user has been created!</h1>'
-        #return '<h1>' + form.username.data + ' ' + form.email.data + ' ' + form.password.data + '</h1>'
-
     return render_template('signup.html', form=form)
 
 @app.route('/dashboard')
@@ -210,6 +183,12 @@ def page_not_found(e):
 def unauthorized():
     return render_template('403.html'), 403
 
+
+
+##########################
+#         models         #
+##########################
+    
 def init_db():
     db.init_app(app)
     db.app = app
@@ -223,8 +202,64 @@ def create_admin():
         db.session.add(user)
         db.session.commit()
         
+paper_authors = db.Table('paper_authors', db.Model.metadata,
+                          db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
+                          db.Column('paper_id', db.Integer, db.ForeignKey('paper.id'))
+                          )
 
+paper_reviewers = db.Table('paper_reviewers', db.Model.metadata,
+                          db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
+                          db.Column('paper_id', db.Integer, db.ForeignKey('paper.id'))
+                          )
+
+class Score(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    rating = db.Column(db.Integer, default = 0)
+    paper_id = db.Column(db.Integer, db.ForeignKey('paper.id'))
+    paper = db.relationship("Paper", backref="scores")
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))  
+    user = db.relationship("User", backref="scores")
+
+ 
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    username = db.Column(db.String(15), unique=True)
+    email = db.Column(db.String(50), unique=True)
+    password = db.Column(db.String(80))
+    is_admin = db.Column(db.Boolean, default=False, nullable=True)
+    papers = db.relationship("Paper", 
+                             secondary=paper_authors,
+                             backref="written"
+                            )
+    reviews = db.relationship("Paper", 
+                             secondary=paper_reviewers,
+                             backref="reviews"
+                            )
     
+    def __repr__(self):
+        return '<Author:{}>'.format(self.username)
+    
+    
+class Paper(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    title = db.Column(db.String(80), nullable=False)
+    abstract = db.Column(db.Text, nullable=False)
+    is_accepted = db.Column(db.Boolean, default=False)
+    authors = db.relationship("User",
+                              secondary=paper_authors,
+                              backref="author"
+                             )
+    reviewers = db.relationship("User",
+                              secondary=paper_reviewers,
+                              backref="reviewer"
+                             )
+        
+    def __repr__(self):
+        return '<Paper{}>'.format(self.title)        
+
+##########################
+#         main           #
+##########################   
 
 if __name__ == '__main__':
     init_db()
