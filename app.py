@@ -3,7 +3,7 @@ from flask_bootstrap import Bootstrap
 from flask_sqlalchemy  import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from forms import PaperForm, ReviewerForm, LoginForm, RegisterForm, RateForm, PaperOverviewTable
+from forms import PaperForm, ReviewerForm, LoginForm, RegisterForm, RateForm, PaperOverviewTable, UserOverviewTable
 
 ##########################
 #         config         #
@@ -11,7 +11,7 @@ from forms import PaperForm, ReviewerForm, LoginForm, RegisterForm, RateForm, Pa
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'Thisissupposedtobesecret!'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////Users/Luc/AnacondaProjects/prs/database.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////Users/Luc/AnacondaProjects/prs/db/exampleDB.db'
 bootstrap = Bootstrap(app)
 db = SQLAlchemy(app)
 login_manager = LoginManager()
@@ -58,7 +58,6 @@ def assign_reviewers():
     form = ReviewerForm()
     qP = Paper.query.all()
     form.paper.choices = [(paper.id, paper.title) for paper in qP]
-    #qU = User.query.filter(User.username != session['username']).all()
     qU = User.query.all()
     form.reviewers.choices =  [(user.id, user.username) for user in qU]
     if form.validate_on_submit():      
@@ -88,24 +87,20 @@ def assign_reviewers():
 def score_overview():
     if current_user.is_admin == False:
         return render_template('403.html'), 403
-    print(request.args.get('id'))
     if request.args.get('id') != None:    
         paper_to_change = Paper.query.get(request.args.get('id'))
         paper_to_change.is_accepted = not paper_to_change.is_accepted
-        print(request.args.get('id'))
-        print(paper_to_change.is_accepted)
         db.session.commit()
     items = Paper.query.all()    
     for item in items:
         item.score = Score.query.filter(Score.paper_id.contains(item.id)).all()
         if len(item.score) == 0:
             item.score = "<not rated yet>"
-        print(item.score)
     table = PaperOverviewTable(items)
     return render_template('score_overview.html', table=table)
 
 
-@app.route('/rate_papers/', methods = ['GET', 'POST'])
+@app.route('/rate_papers', methods = ['GET', 'POST'])
 @login_required
 def rate_papers():
     form = RateForm()
@@ -132,7 +127,7 @@ def rate_papers():
 @app.route('/')
 def index():
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
+        return dashboard()
     return render_template('index.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -159,15 +154,27 @@ def signup():
         session['username'] = form.username.data
         db.session.add(new_user)
         db.session.commit()
-        return '<h1>New user has been created!</h1>'
+        return '<h2>New user has been created! Please <a href="/login">login.</a></h2>'
     return render_template('signup.html', form=form)
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    #papers_to_review = Paper.query.filter()
-    data=[]
-    return render_template('dashboard.html', name=current_user.username,data=data)
+    user = current_user
+    items = Paper.query.filter(Paper.authors.contains(user)).all()
+    for item in items:
+        item.status = Score.query.filter(Score.paper_id.contains(item.id)).all()       
+        if len(item.status) == 0:
+            item.status = "under review"
+        else:
+            if item.is_accepted == True:
+                item.status = "accepted"
+            else:
+                item.status = "rejected"
+    table = UserOverviewTable(items)
+    data=Paper.query.filter(Paper.reviewers.contains(user)).all()
+    print(data)
+    return render_template('overview.html', name=current_user.username,table=table,data=data)
 
 @app.route('/logout')
 @login_required

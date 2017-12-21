@@ -1,0 +1,35 @@
+{% extends "dashboard.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block title %}
+Dashboard
+{% endblock %}
+
+{% block styles %}
+{{super()}}
+<link rel="stylesheet" href="{{url_for('.static', filename='dashboard.css')}}">
+{% endblock %}
+
+{% block content %}
+{{super()}}
+
+<div class="col-sm-9 col-sm-offset-3 col-md-10 col-md-offset-2 main">
+    <h2 class="sub-header">Welcome, {{name}}</h2>
+    <div class="table-responsive">
+        {%- for category, message in get_flashed_messages(with_categories = true) %}
+        <div class = "alert alert-danger">
+        {{ message }}
+        </div>
+        {%- endfor %} 
+            <h4 class="form-signin-heading">Below you can see the status of your submitted papers.</h4>
+            {{ table }}
+            <br>
+            <br>
+            <br>
+            <h4 class="form-signin-heading">Papers you are assigned to review:</h4>
+            {% for item in data %}
+                <p> {{ item }} </p>
+            {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,7 +1,7 @@
 from wtforms import StringField, SelectMultipleField,  PasswordField, TextAreaField, BooleanField, SelectField
-from wtforms.validators import InputRequired, DataRequired, Email, Length
+from wtforms.validators import InputRequired, Email, Length
 from flask_wtf import FlaskForm 
-from flask_table import Table, Col, BoolCol, ButtonCol, LinkCol
+from flask_table import Table, Col, BoolCol, LinkCol
 
 DEFAULT_CHOICES = []
 SCORE = [(-2, '-2 - totally unacceptable'),(-1, '-1 - deficient'),(0, '0 - sufficient'),(1, '1 - good'),(2, '2 - just as awesome as this lab submission')]
@@ -44,6 +44,9 @@ class PaperOverviewTable(Table):
     authors = Col('   Authors   ')
     score = Col('   Ratings   ')
     is_accepted = BoolCol('   Accepted   ')
-    accept = LinkCol('   Assesss   ', 'score_overview', url_kwargs=dict(id='id'))
+    accept = LinkCol('   Assess   ', 'score_overview', url_kwargs=dict(id='id'))
     
+class UserOverviewTable(Table):
+    title = Col('Submitted papers')
+    status = Col('Status')
     
